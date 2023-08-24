@@ -1,56 +1,92 @@
 const express = require("express");
 const router = express.Router();
-const fs = require("fs");
-const path = require("path");
+const getConnection = require("../data/DBpool.js");
 
-const storagePath = path.join(__dirname, "../data");
-const userFilePath = path.join(storagePath, "user.json");
-
-// Function to read users from the JSON file
-const readUsers = () => {
-  try {
-    const usersJson = fs.readFileSync(userFilePath, "utf8");
-    return JSON.parse(usersJson);
-  } catch (error) {
-    console.error("Error reading users from file:", error.message);
-    return [];
-  }
+// Disable foreign key checks
+const disableForeignKeyChecks = (conn, callback) => {
+  conn.query("SET FOREIGN_KEY_CHECKS = 0", (error) => {
+    if (error) {
+      console.error("Error disabling foreign key checks:", error);
+      return callback(error);
+    }
+    callback(null);
+  });
 };
 
-// Sample data for demonstration purposes
-let users = readUsers(); // Read users from file
+// Enable foreign key checks
+const enableForeignKeyChecks = (conn, callback) => {
+  conn.query("SET FOREIGN_KEY_CHECKS = 1", (error) => {
+    if (error) {
+      console.error("Error enabling foreign key checks:", error);
+      return callback(error);
+    }
+    callback(null);
+  });
+};
 
-// Define the route for updating user profiles
 router.post("/:userId/profile", (req, res) => {
   const userId = req.params.userId;
-  console.log(`Updating user profile for userId: ${userId}`);
+  const nickname = req.body.NickName;
+  const password = req.body.user_Password;
 
-  const nickname = req.body.nickname;
-  const password = req.body.password;
+  getConnection((conn) => {
+    conn.beginTransaction((err) => {
+      if (err) {
+        console.error("Error starting transaction:", err);
+        return res.status(500).json({ isUpdated: false, error: "Error starting transaction" });
+      }
 
-  const userIndex = users.findIndex((user) => user.userID === userId);
+      disableForeignKeyChecks(conn, (disableError) => {
+        if (disableError) {
+          conn.rollback(() => {
+            console.error("Error during transaction:", disableError);
+            res.status(500).json({ isUpdated: false, error: "Error during transaction" });
+          });
+        } else {
+          const updateUserQuery = "UPDATE user SET NickName = ?, user_Password = ? WHERE user_ID = ?";
+          const updateQuestionQuery = "UPDATE Question SET NickName = ? WHERE NickName = ?";
 
-  if (userIndex === -1) {
-    console.log(`User not found for userId: ${userId}`);
-    return res.status(404).json({ error: "User not found" });
-  }
-
-  // Update user's nickname and password
-  users[userIndex].nickname = nickname || users[userIndex].nickname;
-  users[userIndex].password = password || users[userIndex].password;
-
-  // Save updated users back to the file
-  fs.writeFile(userFilePath, JSON.stringify(users, null, 2), (err) => {
-    if (err) {
-      console.error("Error saving user data to file:", err.message);
-      return res
-        .status(500)
-        .json({ isUpdated: false, error: "Error saving user data" });
-    } else {
-      console.log("User data updated and saved to user.json successfully.");
-      console.log("Updated user profile:", users[userIndex]);
-      res.json({ issucces: true });
-    }
+          conn.query(updateUserQuery, [nickname, password, userId], (error1, results1) => {
+            if (error1) {
+              conn.rollback(() => {
+                console.error("Error updating user profile:", error1);
+                res.status(500).json({ isUpdated: false, error: "Error updating user profile" });
+              });
+            } else {
+              conn.query(updateQuestionQuery, [nickname, userId], (error2, results2) => {
+                if (error2) {
+                  conn.rollback(() => {
+                    console.error("Error updating Question NickName:", error2);
+                    res.status(500).json({ isUpdated: false, error: "Error updating Question NickName" });
+                  });
+                } else {
+                  enableForeignKeyChecks(conn, (enableError) => {
+                    if (enableError) {
+                      conn.rollback(() => {
+                        console.error("Error during transaction:", enableError);
+                        res.status(500).json({ isUpdated: false, error: "Error during transaction" });
+                      });
+                    } else {
+                      conn.commit((commitError) => {
+                        if (commitError) {
+                          conn.rollback(() => {
+                            console.error("Error committing transaction:", commitError);
+                            res.status(500).json({ isUpdated: false, error: "Error committing transaction" });
+                          });
+                        } else {
+                          console.log("User profile and Question NickName updated");
+                          res.json({ isUpdated: true });
+                        }
+                      });
+                    }
+                  });
+                }
+              });
+            }
+          });
+        }
+      });
+    });
   });
 });
 

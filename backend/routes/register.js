@@ -97,19 +97,19 @@ router.post("/", (req, res) => {
   });
 
   //use DataBase
-  // const query =
-  //   "INSERT INTO user (user_Name, user_Password, NickName, birthday, user_ID) VALUES (?, ?, ?, ?, ?)";
-  // const values = [username, password, nickname, birthdate, userID];
-  // const db = getConnection((conn) =>
-  //   conn.query(query, values, (err, result) => {
-  //     if (err) {
-  //       console.log(err);
-  //       res.status(500).send("An error occurred");
-  //       return;
-  //     }
-  //     res.status(200).send("User registered");
-  //   })
-  // );
+  const query =
+    "INSERT INTO user (user_Name, user_Password, NickName, birthday, user_ID) VALUES (?, ?, ?, ?, ?)";
+  const values = [username, password, nickname, birthdate, userID];
+  const db = getConnection((conn) =>
+    conn.query(query, values, (err, result) => {
+      if (err) {
+        console.log(err);
+        res.status(500).send("An error occurred");
+        return;
+      }
+      res.status(200).send("User registered");
+    })
+  );
 });
 
 module.exports = router;
